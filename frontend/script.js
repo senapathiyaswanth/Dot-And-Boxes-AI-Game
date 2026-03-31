@@ -12,7 +12,7 @@ const DOT_R    = 6.5;  // half dot-size
 const BROWSER_SESSION_KEY = 'dots_boxes_browser_id';
 const IS_VERCEL_HOST = location.hostname.endsWith('.vercel.app');
 const PLAY_POLL_MS = 5000;
-const AIVAI_POLL_MS = 250;
+const AIVAI_POLL_MS = 120;
 
 function getBrowserSessionId() {
   let sessionId = localStorage.getItem(BROWSER_SESSION_KEY);
@@ -1108,8 +1108,10 @@ const AiVsAi = {
     const strat1 = $('aivai-strat1-sel').value;
     const strat2 = $('aivai-strat2-sel').value;
     const active = document.querySelector('#aivai-depth-pills .diff-pill.active');
-    const depth  = active ? parseInt(active.dataset.val) : 2;
-    const delay  = parseFloat($('aivai-delay').value);
+    const rawDepth = active ? parseInt(active.dataset.val) : 1;
+    const depth  = IS_VERCEL_HOST ? Math.min(rawDepth, 2) : rawDepth;
+    const rawDelay  = parseFloat($('aivai-delay').value);
+    const delay  = IS_VERCEL_HOST ? Math.min(rawDelay, 0.05) : rawDelay;
     const rows   = parseInt($('aivai-grid-size').value);
     const cols   = rows;
 

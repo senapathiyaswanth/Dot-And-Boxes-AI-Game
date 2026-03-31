@@ -136,6 +136,30 @@ def _effective_depth(state: GameState, requested_depth: int, difficulty: str) ->
     return min(depth, 4)
 
 
+def _effective_aivai_depth(state: GameState, requested_depth: int) -> int:
+    depth = max(1, min(int(requested_depth or 2), 4))
+    remaining_moves = len(state.get_valid_moves())
+
+    if _IS_VERCEL:
+        if remaining_moves >= 28:
+            return 1
+        if remaining_moves >= 16:
+            return min(depth, 2)
+        if remaining_moves >= 8:
+            return min(depth, 3)
+        return min(depth, 4)
+
+    if remaining_moves >= 28:
+        return min(depth, 2)
+    return depth
+
+
+def _effective_aivai_delay(delay: float) -> float:
+    if _IS_VERCEL:
+        return max(0.01, min(delay, 0.05))
+    return max(0.01, min(delay, 0.5))
+
+
 async def _persist_finished_game(snapshot: dict) -> None:
     try:
         await save_game(
@@ -435,7 +459,7 @@ async def ai_vs_ai(req: AiVsAiReq, session_id: Optional[str] = Query(default=Non
                         state_clone = state.clone()
 
                     try:
-                        search_depth = _effective_depth(state_clone, req.depth, DIFFICULTY_HARD)
+                        search_depth = _effective_aivai_depth(state_clone, req.depth)
                         move, _, met = await asyncio.wait_for(
                             asyncio.to_thread(ai.compute_move, state_clone, search_depth),
                             timeout=_AI_TIMEOUT_SECONDS,
@@ -501,7 +525,7 @@ async def ai_vs_ai(req: AiVsAiReq, session_id: Optional[str] = Query(default=Non
 
                     if game_over:
                         break
-                    await asyncio.sleep(max(0.01, min(req.delay, 1.0)))
+                    await asyncio.sleep(_effective_aivai_delay(req.delay))
             except asyncio.CancelledError:
                 pass
             except Exception as e:
