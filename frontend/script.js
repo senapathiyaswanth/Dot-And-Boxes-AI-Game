@@ -10,6 +10,7 @@ const API_BASE = '/api';
 const CELL_PX  = 70;   // pixels between dots
 const DOT_R    = 6.5;  // half dot-size
 const BROWSER_SESSION_KEY = 'dots_boxes_browser_id';
+const IS_VERCEL_HOST = location.hostname.endsWith('.vercel.app');
 
 function getBrowserSessionId() {
   let sessionId = localStorage.getItem(BROWSER_SESSION_KEY);
@@ -592,6 +593,7 @@ class PlaySection {
     this.aiRequestInFlight = false;    // prevents concurrent AI requests
     this.log              = [];
     this.gameOverShown    = false;
+    this.pollTimer        = null;
     this._wsHandler  = null;
     this._wsMetrics  = null;
     this._wsGameOver = null;
@@ -764,6 +766,26 @@ class PlaySection {
     WS.on('game_over', this._wsGameOver);
   }
 
+  startPolling() {
+    if (this.pollTimer) return;
+    const tick = async () => {
+      if (!document.getElementById(`section-play-${this.strategy}`)?.classList.contains('active')) return;
+      try {
+        const prefix = this.strategy === 'minimax' ? 'mm' : 'ab';
+        const state = await API.get('/state', { sessionId: this.sessionId });
+        this._onState(state, prefix);
+      } catch {}
+    };
+    if (IS_VERCEL_HOST) tick();
+    this.pollTimer = setInterval(tick, IS_VERCEL_HOST ? 1200 : 2500);
+  }
+
+  stopPolling() {
+    if (!this.pollTimer) return;
+    clearInterval(this.pollTimer);
+    this.pollTimer = null;
+  }
+
   async _startGame() {
     const prefix = this.strategy === 'minimax' ? 'mm' : 'ab';
     this.mode = $(`${prefix}-mode`).value;
@@ -797,6 +819,8 @@ class PlaySection {
         mode:     this.mode,
         strategy: this.strategy,
       }, { sessionId: this.sessionId });
+      const state = await API.get('/state', { sessionId: this.sessionId });
+      this._onState(state, prefix);
       this._addLog('sys', '⬡ New game started');
     } catch (e) {
       Toast.show('Failed to start game: ' + e.message, 'error');
@@ -811,6 +835,9 @@ class PlaySection {
     this.gameOverShown = false;
     try {
       await API.post('/reset', {}, { sessionId: this.sessionId });
+      const prefix = this.strategy === 'minimax' ? 'mm' : 'ab';
+      const state = await API.get('/state', { sessionId: this.sessionId });
+      this._onState(state, prefix);
       this._addLog('sys', '↺ Board reset');
     } catch (e) {
       Toast.show('Reset failed: ' + e.message, 'error');
@@ -907,6 +934,11 @@ class PlaySection {
     if (this.aiLocked) return;
     try {
       await API.post('/move', { m_type: type, r, c }, { sessionId: this.sessionId });
+      if (IS_VERCEL_HOST) {
+        const prefix = this.strategy === 'minimax' ? 'mm' : 'ab';
+        const state = await API.get('/state', { sessionId: this.sessionId });
+        this._onState(state, prefix);
+      }
       this._addLog(1, `P1 drew ${type.toUpperCase()} line at (${r},${c})`);
       if (this.board) this.board.clearSuggestion();
     } catch (e) {
@@ -932,6 +964,13 @@ class PlaySection {
         depth:      this.depth,
         difficulty: _diff,
       }, { sessionId: this.sessionId });
+      if (IS_VERCEL_HOST) {
+        const state = await API.get('/state', { sessionId: this.sessionId });
+        this._onState(state, prefix);
+      }
+      if (res.metrics) {
+        this._onMetrics(res.metrics, prefix);
+      }
       if (res.move) {
         this._addLog(2, `AI drew ${res.move.type.toUpperCase()} line at (${res.move.r},${res.move.c})`);
       }
@@ -1009,6 +1048,7 @@ const AiVsAi = {
   board: null,
   running: false,
   gameOverShown: false,
+  pollTimer: null,
   sessionId: getScopedSessionId('aivai'),
 
   init() {
@@ -1036,6 +1076,25 @@ const AiVsAi = {
     WS.on('game_over', this._ws3);
   },
 
+  startPolling() {
+    if (this.pollTimer) return;
+    const tick = async () => {
+      if (!$('section-aivai')?.classList.contains('active')) return;
+      try {
+        const state = await API.get('/state', { sessionId: this.sessionId });
+        this._onState(state);
+      } catch {}
+    };
+    if (IS_VERCEL_HOST) tick();
+    this.pollTimer = setInterval(tick, IS_VERCEL_HOST ? 1200 : 2500);
+  },
+
+  stopPolling() {
+    if (!this.pollTimer) return;
+    clearInterval(this.pollTimer);
+    this.pollTimer = null;
+  },
+
   async start() {
     Modal.hide();
     const strat1 = $('aivai-strat1-sel').value;
@@ -1058,6 +1117,10 @@ const AiVsAi = {
 
     // Start fresh game first
     await API.post('/start-game', { rows, cols, mode: 'aivai', strategy: `${strat1}_vs_${strat2}` }, { sessionId: this.sessionId });
+    try {
+      const state = await API.get('/state', { sessionId: this.sessionId });
+      this._onState(state);
+    } catch {}
 
     try {
       await API.post('/ai-vs-ai', { strat1, strat2, depth, delay, rows, cols }, { sessionId: this.sessionId });
@@ -1072,6 +1135,10 @@ const AiVsAi = {
     try {
       Modal.hide();
       await API.post('/reset', {}, { sessionId: this.sessionId });
+      try {
+        const state = await API.get('/state', { sessionId: this.sessionId });
+        this._onState(state);
+      } catch {}
       $('aivai-score1').textContent = '0';
       $('aivai-score2').textContent = '0';
       $('aivai-log').innerHTML = '';
@@ -1436,16 +1503,28 @@ const App = {
   syncLiveSession(section) {
     if (section === 'play-minimax' && PlaySections.mm) {
       WS.setSession(PlaySections.mm.sessionId);
+      PlaySections.mm.startPolling();
+      PlaySections.ab?.stopPolling();
+      AiVsAi.stopPolling();
       return;
     }
     if (section === 'play-alphabeta' && PlaySections.ab) {
       WS.setSession(PlaySections.ab.sessionId);
+      PlaySections.ab.startPolling();
+      PlaySections.mm?.stopPolling();
+      AiVsAi.stopPolling();
       return;
     }
     if (section === 'aivai') {
       WS.setSession(AiVsAi.sessionId);
+      AiVsAi.startPolling();
+      PlaySections.mm?.stopPolling();
+      PlaySections.ab?.stopPolling();
       return;
     }
+    PlaySections.mm?.stopPolling();
+    PlaySections.ab?.stopPolling();
+    AiVsAi.stopPolling();
     WS.setSession(getScopedSessionId('dashboard'));
   },
 
