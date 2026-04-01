@@ -13,6 +13,14 @@
 </head>
 <body>
 
+<button class="mobile-menu-btn" id="mobile-menu-btn" type="button" aria-label="Open navigation" aria-expanded="false" aria-controls="sidebar">
+  <span></span>
+  <span></span>
+  <span></span>
+</button>
+
+<div class="sidebar-backdrop" id="sidebar-backdrop" aria-hidden="true"></div>
+
 <div class="app">
 
   <!-- ═══════════════════════ SIDEBAR ═══════════════════════ -->
@@ -65,6 +73,14 @@
 
   <!-- ═══════════════════════ MAIN ═══════════════════════════ -->
   <main class="main">
+    <div class="mobile-tabs" id="mobile-tabs">
+      <button class="mobile-tab active" data-section="dashboard" type="button">Overview</button>
+      <button class="mobile-tab" data-section="play-minimax" type="button">Minimax</button>
+      <button class="mobile-tab" data-section="play-alphabeta" type="button">Alpha-Beta</button>
+      <button class="mobile-tab" data-section="aivai" type="button">AI vs AI</button>
+      <button class="mobile-tab" data-section="comparison" type="button">Compare</button>
+      <button class="mobile-tab" data-section="history" type="button">History</button>
+    </div>
 
     <!-- ─────────────── DASHBOARD ─────────────────────────── -->
     <section class="page active" id="section-dashboard">
@@ -94,7 +110,7 @@
           <span class="card-title">🚀 Quick Start — Choose Your Battle</span>
         </div>
         <div class="card-body">
-          <div class="mode-selector" style="grid-template-columns: repeat(3,1fr);">
+          <div class="mode-selector quick-start-grid">
             <div class="mode-card" id="qs-hvh" onclick="App.quickStart('hvh')">
               <div class="mode-card-icon">👥</div>
               <div class="mode-card-title">Human vs Human</div>
@@ -115,7 +131,7 @@
       </div>
 
       <!-- Algorithm info cards -->
-      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:1.25rem;">
+      <div class="dashboard-algo-grid">
         <div class="card">
           <div class="card-header">
             <span class="card-title" style="color:var(--blue-600);">🎮 Minimax Algorithm</span>

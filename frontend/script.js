@@ -11,8 +11,9 @@ const CELL_PX  = 70;   // pixels between dots
 const DOT_R    = 6.5;  // half dot-size
 const BROWSER_SESSION_KEY = 'dots_boxes_browser_id';
 const IS_VERCEL_HOST = location.hostname.endsWith('.vercel.app');
-const PLAY_POLL_MS = 5000;
-const AIVAI_POLL_MS = 120;
+const PLAY_POLL_MS = IS_VERCEL_HOST ? 15000 : 6000;
+const AIVAI_POLL_MS = IS_VERCEL_HOST ? 180 : 120;
+const AIVAI_HIDDEN_POLL_MS = IS_VERCEL_HOST ? 1200 : 700;
 
 function getBrowserSessionId() {
   let sessionId = localStorage.getItem(BROWSER_SESSION_KEY);
@@ -66,6 +67,10 @@ function modeLabel(mode) {
 
 function strategyLabel(s) {
   return { minimax: 'Minimax', alphabeta: 'Alpha-Beta', adaptive: 'Adaptive AI' }[s] || s;
+}
+
+function isDocumentVisible() {
+  return !document.hidden;
 }
 
 function winnerText(w) {
@@ -205,10 +210,19 @@ const WS = {
 /* ── Sidebar Navigation ──────────────────────────────────────── */
 const Nav = {
   current: 'dashboard',
+  sidebarOpen: false,
 
   init() {
     document.querySelectorAll('.nav-item[data-section]').forEach(item => {
       item.addEventListener('click', () => this.go(item.dataset.section));
+    });
+    document.querySelectorAll('.mobile-tab[data-section]').forEach(item => {
+      item.addEventListener('click', () => this.go(item.dataset.section));
+    });
+    $('mobile-menu-btn')?.addEventListener('click', () => this.toggleSidebar());
+    $('sidebar-backdrop')?.addEventListener('click', () => this.closeSidebar());
+    window.addEventListener('resize', () => {
+      if (window.innerWidth > 768) this.closeSidebar(true);
     });
   },
 
@@ -216,22 +230,44 @@ const Nav = {
     // Hide all pages
     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
     document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    document.querySelectorAll('.mobile-tab').forEach(n => n.classList.remove('active'));
 
     // Show target
     const page = $(`section-${section}`);
     const nav  = $(`nav-${section}`);
+    const mobileTab = document.querySelector(`.mobile-tab[data-section="${section}"]`);
     if (page) page.classList.add('active');
     if (nav)  nav.classList.add('active');
+    if (mobileTab) mobileTab.classList.add('active');
     this.current = section;
     if (location.hash !== `#${section}`) {
       history.replaceState(null, '', `#${section}`);
     }
+    this.closeSidebar();
     App.syncLiveSession(section);
 
     // Lazy-load section data
     if (section === 'history')    History.load();
-    if (section === 'comparison') ChartMgr.initHistoryChart();
+    if (section === 'comparison') ChartMgr.activateComparisonView();
     if (section === 'dashboard')  Dashboard.load();
+  },
+
+  toggleSidebar(force = null) {
+    const shouldOpen = force ?? !this.sidebarOpen;
+    const sidebar = $('sidebar');
+    const backdrop = $('sidebar-backdrop');
+    const button = $('mobile-menu-btn');
+    this.sidebarOpen = !!shouldOpen;
+    sidebar?.classList.toggle('open', this.sidebarOpen);
+    backdrop?.classList.toggle('open', this.sidebarOpen);
+    button?.classList.toggle('open', this.sidebarOpen);
+    if (button) button.setAttribute('aria-expanded', this.sidebarOpen ? 'true' : 'false');
+    document.body.style.overflow = this.sidebarOpen && window.innerWidth <= 768 ? 'hidden' : '';
+  },
+
+  closeSidebar(skipIfDesktop = false) {
+    if (skipIfDesktop && window.innerWidth > 768) return;
+    this.toggleSidebar(false);
   },
 };
 
@@ -294,6 +330,21 @@ const ChartMgr = {
         borderRadius: 6,
       }],
     ));
+  },
+
+  activateComparisonView() {
+    this.initComparisonCharts();
+    this.initHistoryChart();
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        this.nodes?.resize();
+        this.time?.resize();
+        this.history?.resize();
+        this.nodes?.update('none');
+        this.time?.update('none');
+        this.history?.update('none');
+      });
+    });
   },
 
   updateComparisonCharts(mmNodes, abNodes, mmTime, abTime) {
@@ -607,6 +658,7 @@ class PlaySection {
     this.log              = [];
     this.gameOverShown    = false;
     this.pollTimer        = null;
+    this.pollInFlight     = false;
     this.hasStarted       = false;
     this.lastStateVersion = null;
     this._wsHandler  = null;
@@ -783,20 +835,29 @@ class PlaySection {
   startPolling() {
     if (this.pollTimer) return;
     const tick = async () => {
+      if (this.pollInFlight) return;
       if (!document.getElementById(`section-play-${this.strategy}`)?.classList.contains('active')) return;
+      if (!isDocumentVisible()) return;
+      this.pollInFlight = true;
       try {
         const prefix = this.strategy === 'minimax' ? 'mm' : 'ab';
         const state = await API.get('/state', { sessionId: this.sessionId });
         this._onState(state, prefix);
       } catch {}
+      finally {
+        this.pollInFlight = false;
+        this.pollTimer = setTimeout(tick, PLAY_POLL_MS);
+      }
     };
-    this.pollTimer = setInterval(tick, PLAY_POLL_MS);
+    tick();
   }
 
   stopPolling() {
-    if (!this.pollTimer) return;
-    clearInterval(this.pollTimer);
+    if (this.pollTimer) {
+      clearTimeout(this.pollTimer);
+    }
     this.pollTimer = null;
+    this.pollInFlight = false;
   }
 
   async _startGame() {
@@ -1044,6 +1105,8 @@ class PlaySection {
   }
 
   _showGameOver(data) {
+    this.aiLocked = false;
+    this.aiRequestInFlight = false;
     const scores = data.scores || {};
     const winner = data.winner ?? 0;
     Modal.show(scores, winner, () => this._startGame(), this.mode);
@@ -1066,6 +1129,7 @@ const AiVsAi = {
   running: false,
   gameOverShown: false,
   pollTimer: null,
+  pollInFlight: false,
   sessionId: getScopedSessionId('aivai'),
   lastStateVersion: null,
 
@@ -1097,20 +1161,28 @@ const AiVsAi = {
   startPolling() {
     if (this.pollTimer) return;
     const tick = async () => {
+      if (this.pollInFlight) return;
       if (!$('section-aivai')?.classList.contains('active') || !this.running) return;
+      this.pollInFlight = true;
       try {
         const state = await API.get('/state', { sessionId: this.sessionId });
         this._onState(state);
       } catch {}
+      finally {
+        this.pollInFlight = false;
+        const delay = isDocumentVisible() ? AIVAI_POLL_MS : AIVAI_HIDDEN_POLL_MS;
+        this.pollTimer = setTimeout(tick, delay);
+      }
     };
-    if (IS_VERCEL_HOST) tick();
-    this.pollTimer = setInterval(tick, AIVAI_POLL_MS);
+    tick();
   },
 
   stopPolling() {
-    if (!this.pollTimer) return;
-    clearInterval(this.pollTimer);
+    if (this.pollTimer) {
+      clearTimeout(this.pollTimer);
+    }
     this.pollTimer = null;
+    this.pollInFlight = false;
   },
 
   async start() {
@@ -1253,11 +1325,10 @@ const Comparison = {
 
   init() {
     $('btn-run-comparison').onclick = () => this.run();
-    ChartMgr.initComparisonCharts();
-    ChartMgr.initHistoryChart();
   },
 
   async run() {
+    ChartMgr.activateComparisonView();
     const depth = parseInt($('cmp-depth').value);
     const gridSz = parseInt($('cmp-grid').value);
     const btn = $('btn-run-comparison');
@@ -1578,6 +1649,17 @@ const App = {
     WS.connect(getScopedSessionId('dashboard'));
     Nav.init();
     Modal.init();
+    document.addEventListener('visibilitychange', () => this.handleVisibilityChange());
+    window.addEventListener('hashchange', () => {
+      const section = location.hash ? location.hash.slice(1) : 'dashboard';
+      if (section && section !== Nav.current) Nav.go(section);
+    });
+    window.addEventListener('resize', () => {
+      ChartMgr.nodes?.resize();
+      ChartMgr.time?.resize();
+      ChartMgr.history?.resize();
+      ChartMgr.qvalues?.resize();
+    });
 
     // History
     $('btn-refresh-history').onclick = () => History.load();
@@ -1590,6 +1672,19 @@ const App = {
       Nav.go(hashSection);
     } else {
       this.syncLiveSession(Nav.current);
+    }
+  },
+
+  handleVisibilityChange() {
+    if (document.hidden) {
+      PlaySections.mm?.stopPolling();
+      PlaySections.ab?.stopPolling();
+      AiVsAi.stopPolling();
+      return;
+    }
+    this.syncLiveSession(Nav.current);
+    if (Nav.current === 'comparison') {
+      ChartMgr.activateComparisonView();
     }
   },
 };
