@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+from pathlib import Path
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -34,5 +35,8 @@ app.add_middleware(
 
 app.include_router(router, prefix="/api")
 
-# Serve frontend SPA
-app.mount("/", StaticFiles(directory="frontend", html=True), name="frontend")
+# Serve the SPA locally when static assets exist in the runtime bundle.
+for candidate in (Path("public"), Path("frontend")):
+    if candidate.exists():
+        app.mount("/", StaticFiles(directory=str(candidate), html=True), name="frontend")
+        break

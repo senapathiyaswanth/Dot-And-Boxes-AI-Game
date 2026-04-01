@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Battle Suite — Dots &amp; Boxes</title>
+  <meta name="description" content="Play Dots and Boxes against Minimax, Alpha-Beta, and self-learning Adaptive AI. Compare algorithms in real time with visual charts and analytics.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- ═══════════════════════ SIDEBAR ═══════════════════════ -->
+  <nav class="sidebar" id="sidebar">
+
+    <div class="sidebar-brand">
+      <img src="/assets/logo.png" alt="Dots & Boxes AI" class="brand-logo" />
+    </div>
+
+    <div class="sidebar-nav">
+      <div class="nav-section-label">Dashboard</div>
+      <a class="nav-item active" data-section="dashboard" id="nav-dashboard" href="#dashboard" role="button">
+        <span class="nav-icon">🏠</span>
+        <span class="nav-label">Overview</span>
+      </a>
+
+      <div class="nav-section-label" style="margin-top:0.5rem;">Play</div>
+      <a class="nav-item" data-section="play-minimax" id="nav-play-minimax" href="#play-minimax" role="button">
+        <span class="nav-icon">🎮</span>
+        <span class="nav-label">Play — Minimax</span>
+      </a>
+      <a class="nav-item" data-section="play-alphabeta" id="nav-play-alphabeta" href="#play-alphabeta" role="button">
+        <span class="nav-icon">🔬</span>
+        <span class="nav-label">Play — Alpha-Beta</span>
+      </a>
+      <a class="nav-item" data-section="aivai" id="nav-aivai" href="#aivai" role="button">
+        <span class="nav-icon">⚔️</span>
+        <span class="nav-label">AI vs AI</span>
+      </a>
+
+      <div class="nav-section-label" style="margin-top:0.5rem;">Analysis</div>
+      <a class="nav-item" data-section="comparison" id="nav-comparison" href="#comparison" role="button">
+        <span class="nav-icon">📊</span>
+        <span class="nav-label">Algorithm Comparison</span>
+      </a>
+
+      <a class="nav-item" data-section="history" id="nav-history" href="#history" role="button">
+        <span class="nav-icon">📜</span>
+        <span class="nav-label">Game History</span>
+      </a>
+    </div>
+
+    <div class="sidebar-footer">
+      <div class="conn-status">
+        <span class="conn-dot" id="conn-dot"></span>
+        <span id="conn-label">Connecting…</span>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ═══════════════════════ MAIN ═══════════════════════════ -->
+  <main class="main">
+
+    <div class="mobile-header" id="mobile-header">
+      <div class="mobile-header-top">
+        <div>
+          <div class="mobile-header-kicker">Dots &amp; Boxes AI</div>
+          <div class="mobile-header-title" id="mobile-header-title">Dashboard</div>
+        </div>
+        <div class="mobile-conn-pill">
+          <span class="conn-dot" id="mobile-conn-dot"></span>
+          <span id="mobile-conn-label">Connecting…</span>
+        </div>
+      </div>
+      <div class="mobile-section-nav" id="mobile-section-nav" aria-label="Mobile navigation">
+        <button class="mobile-section-btn active" data-section="dashboard" type="button">Overview</button>
+        <button class="mobile-section-btn" data-section="play-minimax" type="button">Minimax</button>
+        <button class="mobile-section-btn" data-section="play-alphabeta" type="button">Alpha-Beta</button>
+        <button class="mobile-section-btn" data-section="aivai" type="button">AI Battle</button>
+        <button class="mobile-section-btn" data-section="comparison" type="button">Compare</button>
+        <button class="mobile-section-btn" data-section="history" type="button">History</button>
+      </div>
+    </div>
+
+    <!-- ─────────────── DASHBOARD ─────────────────────────── -->
+    <section class="page active" id="section-dashboard">
+      <div class="page-header">
+        <h1 class="page-title"><span class="title-icon">🏠</span> Dashboard</h1>
+        <p class="page-sub">Welcome to the AI Battle Suite — select a mode to start playing</p>
+      </div>
+
+      <!-- Stats row -->
+      <div class="stats-grid" id="dash-stats-grid">
+        <div class="stat-card blue">
+          <div class="stat-card-icon">🎮</div>
+          <div class="stat-card-value" id="stat-total-games">—</div>
+          <div class="stat-card-label">Total Games</div>
+        </div>
+        <div class="stat-card red">
+          <div class="stat-card-icon">🏆</div>
+          <div class="stat-card-value" id="stat-ai-wins">—</div>
+          <div class="stat-card-label">AI Wins (P2)</div>
+        </div>
+        <!-- AI Learning stats removed from UI per requirements yet preserved in backend -->
+      </div>
+
+      <!-- Quick-start mode cards -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">🚀 Quick Start — Choose Your Battle</span>
+        </div>
+        <div class="card-body">
+          <div class="mode-selector quick-start-grid">
+            <button class="mode-card" id="qs-hvh" type="button" data-quickstart="hvh">
+              <div class="mode-card-icon">👥</div>
+              <div class="mode-card-title">Human vs Human</div>
+              <div class="mode-card-sub">Two players, one board</div>
+            </button>
+            <button class="mode-card" id="qs-hvai" type="button" data-quickstart="hvai">
+              <div class="mode-card-icon">🤖</div>
+              <div class="mode-card-title">Human vs AI</div>
+              <div class="mode-card-sub">Challenge the machine</div>
+            </button>
+            <button class="mode-card" id="qs-aivai" type="button" data-quickstart="aivai">
+              <div class="mode-card-icon">⚔️</div>
+              <div class="mode-card-title">AI vs AI</div>
+              <div class="mode-card-sub">Algorithms battle each other</div>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Algorithm info cards -->
+      <div class="dashboard-algo-grid">
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title" style="color:var(--blue-600);">🎮 Minimax Algorithm</span>
+          </div>
+          <div class="card-body" style="font-size:0.85rem;color:var(--text-muted);line-height:1.65;">
+            <div class="progress-bar mt-2">
+              <div class="progress-fill blue" style="width:60%"></div>
+            </div>
+            <div class="flex justify-between mt-1" style="font-size:0.7rem;color:var(--text-light);">
+              <span>Efficiency</span><span>60%</span>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title" style="color:var(--red-600);">🔬 Alpha-Beta Pruning</span>
+          </div>
+          <div class="card-body" style="font-size:0.85rem;color:var(--text-muted);line-height:1.65;">
+            <div class="progress-bar mt-2">
+              <div class="progress-fill red" style="width:92%"></div>
+            </div>
+            <div class="flex justify-between mt-1" style="font-size:0.7rem;color:var(--text-light);">
+              <span>Efficiency</span><span>92%</span>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title" style="color:var(--purple-500);">🧠 Adaptive AI</span>
+          </div>
+          <div class="card-body" style="font-size:0.85rem;color:var(--text-muted);line-height:1.65;">
+            <div class="progress-bar mt-2">
+              <div class="progress-fill purple" style="width:85%"></div>
+            </div>
+            <div class="flex justify-between mt-1" style="font-size:0.7rem;color:var(--text-light);">
+              <span>Efficiency</span><span>85%</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─────────────── PLAY — MINIMAX ─────────────────────── -->
+    <section class="page" id="section-play-minimax">
+      <div class="page-header">
+        <h1 class="page-title"><span class="title-icon">🎮</span> Play — Minimax</h1>
+        <p class="page-sub">Classic adversarial search — explores all possible moves to find the optimal choice</p>
+      </div>
+      <div id="play-mm-root" data-strategy="minimax"></div>
+    </section>
+
+    <!-- ─────────────── PLAY — ALPHA-BETA ──────────────────── -->
+    <section class="page" id="section-play-alphabeta">
+      <div class="page-header">
+        <h1 class="page-title"><span class="title-icon">🔬</span> Play — Alpha-Beta Pruning</h1>
+        <p class="page-sub">Same optimal play as Minimax but dramatically faster — prunes irrelevant branches</p>
+      </div>
+      <div id="play-ab-root" data-strategy="alphabeta"></div>
+    </section>
+
+    <!-- ─────────────── AI vs AI ───────────────────────────── -->
+    <section class="page" id="section-aivai">
+      <div class="page-header">
+        <h1 class="page-title"><span class="title-icon">⚔️</span> AI vs AI Simulation</h1>
+        <p class="page-sub">Watch two AI algorithms battle in real time — observe different strategic styles</p>
+      </div>
+
+      <div class="aivai-layout">
+        <!-- Left: board + agent display -->
+        <div class="flex flex-col gap-1" style="gap:1rem;">
+          <!-- Agent cards -->
+          <div class="aivai-agents">
+            <div class="agent-card agent1">
+              <div class="agent-name">Agent 1 (Blue)</div>
+              <div class="agent-score" id="aivai-score1">0</div>
+              <div class="agent-strategy" id="aivai-strat1">Alpha-Beta</div>
+            </div>
+            <div class="agent-card agent2">
+              <div class="agent-name">Agent 2 (Red)</div>
+              <div class="agent-score" id="aivai-score2">0</div>
+              <div class="agent-strategy" id="aivai-strat2">Adaptive</div>
+            </div>
+          </div>
+
+          <!-- Board -->
+          <div class="card board-card" id="aivai-board-card">
+            <div class="board-overlay" id="aivai-board-overlay">
+              <div class="thinking-spinner">
+                <div class="spinner-ring"></div>
+                <div class="thinking-text">AI Thinking…</div>
+              </div>
+            </div>
+            <div id="aivai-grid" class="grid"></div>
+          </div>
+
+          <!-- Turn badge -->
+          <div class="score-bar" style="justify-content:center;gap:1rem;">
+            <span class="turn-label">Now Playing</span>
+            <span class="turn-pill p1" id="aivai-turn-pill">Agent 1 (Blue)</span>
+          </div>
+        </div>
+
+        <!-- Right: controls + metrics -->
+        <div class="controls-panel">
+          <div class="card">
+            <div class="card-header"><span class="card-title">⚙️ Configuration</span></div>
+            <div class="card-body flex flex-col gap-2" style="gap:0.85rem;">
+              <div class="form-group">
+                <label class="form-label">Agent 1 Strategy</label>
+                <select class="select-ctrl" id="aivai-strat1-sel">
+                  <option value="minimax">Minimax</option>
+                  <option value="alphabeta" selected>Alpha-Beta</option>
+                  <option value="adaptive">Adaptive (Q-Learning)</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Agent 2 Strategy</label>
+                <select class="select-ctrl" id="aivai-strat2-sel">
+                  <option value="minimax">Minimax</option>
+                  <option value="alphabeta">Alpha-Beta</option>
+                  <option value="adaptive" selected>Adaptive (Q-Learning)</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Grid Size</label>
+                <select class="select-ctrl" id="aivai-grid-size">
+                  <option value="3">3 × 3</option>
+                  <option value="4" selected>4 × 4</option>
+                  <option value="5">5 × 5</option>
+                  <option value="6">6 × 6</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Search Depth</label>
+                <div class="diff-pills" id="aivai-depth-pills">
+                  <span class="diff-pill" data-val="1">1</span>
+                  <span class="diff-pill active" data-val="2">2</span>
+                  <span class="diff-pill" data-val="3">3</span>
+                  <span class="diff-pill" data-val="4">4</span>
+                </div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Speed (delay)</label>
+                <select class="select-ctrl" id="aivai-delay">
+                  <option value="0.01">Instant (0.01s)</option>
+                  <option value="0.03">Fast (0.03s)</option>
+                  <option value="0.05" selected>Balanced (0.05s)</option>
+                  <option value="0.1">Smooth (0.1s)</option>
+                  <option value="0.2">Slow (0.2s)</option>
+                </select>
+              </div>
+              <div class="flex gap-1" style="gap:0.65rem;flex-wrap:wrap;">
+                <button class="btn btn-blue btn-full" id="btn-aivai-start">▶ Start Battle</button>
+                <button class="btn btn-ghost btn-sm" id="btn-aivai-reset">↺ Reset</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Live metrics -->
+          <div class="card">
+            <div class="card-header"><span class="card-title">📡 Live Metrics</span></div>
+            <div class="card-body">
+              <div class="metrics-grid">
+                <div class="metric-tile">
+                  <div class="metric-tile-label">Nodes</div>
+                  <div class="metric-tile-value blue" id="aivai-nodes">—</div>
+                </div>
+                <div class="metric-tile">
+                  <div class="metric-tile-label">Pruned</div>
+                  <div class="metric-tile-value red" id="aivai-pruned">—</div>
+                </div>
+                <div class="metric-tile">
+                  <div class="metric-tile-label">Time (ms)</div>
+                  <div class="metric-tile-value purple" id="aivai-time">—</div>
+                </div>
+                <div class="metric-tile">
+                  <div class="metric-tile-label">Q-Value</div>
+                  <div class="metric-tile-value green" id="aivai-qval">—</div>
+                </div>
+              </div>
+              <div class="mt-2">
+                <div class="metric-tile-label mt-1" style="margin-bottom:0.4rem;">Move Log</div>
+                <div class="log-box" id="aivai-log"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─────────────── ALGORITHM COMPARISON ──────────────── -->
+    <section class="page" id="section-comparison">
+      <div class="page-header">
+        <h1 class="page-title"><span class="title-icon">📊</span> Algorithm Comparison</h1>
+        <p class="page-sub">Run Minimax and Alpha-Beta on the same board state and compare performance metrics</p>
+      </div>
+
+      <div class="comparison-layout">
+        <!-- Controls -->
+        <div class="card">
+          <div class="card-header"><span class="card-title">⚙️ Comparison Settings</span></div>
+          <div class="card-body">
+            <div class="form-row" style="align-items:flex-end;gap:1rem;flex-wrap:wrap;">
+              <div class="form-group" style="min-width:180px;">
+                <label class="form-label">Search Depth</label>
+                <select class="select-ctrl" id="cmp-depth">
+                  <option value="2" selected>Depth 2</option>
+                  <option value="3">Depth 3</option>
+                  <option value="4">Depth 4</option>
+                  <option value="5">Depth 5</option>
+                </select>
+              </div>
+              <div class="form-group" style="min-width:180px;">
+                <label class="form-label">Board (for fresh comparison)</label>
+                <select class="select-ctrl" id="cmp-grid">
+                  <option value="3">3 × 3</option>
+                  <option value="4" selected>4 × 4</option>
+                  <option value="5">5 × 5</option>
+                  <option value="6">6 × 6</option>
+                </select>
+              </div>
+              <button class="btn btn-blue" id="btn-run-comparison" style="flex-shrink:0;">
+                ▶ Run Comparison
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Result cards -->
+        <div class="cmp-cards" id="cmp-result" style="display:none;">
+          <div class="card cmp-card" id="cmp-mm-card">
+            <div class="card-body">
+              <div class="cmp-algo-name mm">🎮 Minimax</div>
+              <div class="stat-row">
+                <span class="stat-label">Nodes Explored</span>
+                <span class="stat-value highlight-blue" id="cmp-mm-nodes">—</span>
+              </div>
+              <div class="stat-row">
+                <span class="stat-label">Execution Time</span>
+                <span class="stat-value" id="cmp-mm-time">—</span>
+              </div>
+              <div class="stat-row">
+                <span class="stat-label">Branches Pruned</span>
+                <span class="stat-value" id="cmp-mm-pruned">—</span>
+              </div>
+              <div class="stat-row">
+                <span class="stat-label">Best Move</span>
+                <span class="stat-value" id="cmp-mm-move">—</span>
+              </div>
+              <div class="stat-row">
+                <span class="stat-label">Score</span>
+                <span class="stat-value" id="cmp-mm-score">—</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="savings-badge">
+            <div class="savings-pct" id="saving-pct">0%</div>
+            <div class="savings-label">Nodes Saved<br>by Pruning</div>
+            <div style="margin-top:0.5rem;font-size:0.75rem;color:var(--text-muted);text-align:center;">
+              Speedup: <strong id="cmp-speedup">—×</strong>
+            </div>
+          </div>
+
+          <div class="card cmp-card" id="cmp-ab-card">
+            <div class="card-body">
+              <div class="cmp-algo-name ab">🔬 Alpha-Beta</div>
+              <div class="stat-row">
+                <span class="stat-label">Nodes Explored</span>
+                <span class="stat-value highlight-red" id="cmp-ab-nodes">—</span>
+              </div>
+              <div class="stat-row">
+                <span class="stat-label">Execution Time</span>
+                <span class="stat-value" id="cmp-ab-time">—</span>
+              </div>
+              <div class="stat-row">
+                <span class="stat-label">Branches Pruned</span>
+                <span class="stat-value highlight-green" id="cmp-ab-pruned">—</span>
+              </div>
+              <div class="stat-row">
+                <span class="stat-label">Best Move</span>
+                <span class="stat-value" id="cmp-ab-move">—</span>
+              </div>
+              <div class="stat-row">
+                <span class="stat-label">Score</span>
+                <span class="stat-value" id="cmp-ab-score">—</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Charts -->
+        <div class="chart-grid" id="cmp-charts" style="display:none;">
+          <div class="card chart-card">
+            <div class="chart-title">🔢 Nodes Explored</div>
+            <canvas id="chart-nodes" height="200"></canvas>
+          </div>
+          <div class="card chart-card">
+            <div class="chart-title">⏱ Execution Time (s)</div>
+            <canvas id="chart-time" height="200"></canvas>
+          </div>
+        </div>
+
+        <!-- Running history -->
+        <div class="card chart-card chart-full" id="history-chart-wrap">
+          <div class="chart-title">📈 Nodes per Move — Current Game Session</div>
+          <canvas id="chart-history" height="160"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <!-- AI Learning runs silently in the backend — no frontend section -->
+
+    <!-- ─────────────── HISTORY ────────────────────────────── -->
+    <section class="page" id="section-history">
+      <div class="page-header">
+        <h1 class="page-title"><span class="title-icon">📜</span> Game History</h1>
+        <p class="page-sub">All saved games — click Replay to step through any match</p>
+      </div>
+
+      <div class="history-layout">
+        <div class="flex items-center justify-between">
+          <span class="text-muted text-sm" id="history-count">Loading games…</span>
+          <button class="btn btn-outline-blue btn-sm" id="btn-refresh-history">↻ Refresh</button>
+        </div>
+
+        <div class="card table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Mode</th>
+                <th>Strategy</th>
+                <th>Grid</th>
+                <th>Score</th>
+                <th>Winner</th>
+                <th>Date</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="history-body">
+              <tr>
+                <td colspan="8" style="text-align:center;color:var(--text-muted);padding:2rem;">
+                  No games yet — play some games first!
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Replay panel -->
+        <div class="card replay-panel" id="replay-panel">
+          <div class="card-header">
+            <span class="card-title">🔁 Replay — Game #<span id="replay-game-id">?</span></span>
+            <div class="replay-controls">
+              <button class="btn btn-sm" id="btn-replay-prev">⬅ Prev</button>
+              <span class="replay-step-info" id="replay-step-info">0 / 0</span>
+              <button class="btn btn-sm" id="btn-replay-next">Next ➡</button>
+              <button class="btn btn-ghost btn-sm" id="btn-replay-close">✕ Close</button>
+            </div>
+          </div>
+          <div class="card-body flex flex-col" style="gap:1rem;">
+            <div style="display:flex;justify-content:center;">
+              <div id="replay-grid" class="grid"></div>
+            </div>
+            <div class="replay-move-info" id="replay-move-info">Select a game to start replay</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main><!-- /main -->
+
+</div><!-- /app -->
+
+<!-- ═══════════════════════ GAME OVER MODAL ═════════════════ -->
+<div class="modal-overlay" id="modal-gameover" role="dialog" aria-modal="true">
+  <div class="modal-box">
+    <div class="modal-icon" id="modal-icon">🏆</div>
+    <div class="modal-title" id="modal-title">Game Over!</div>
+    <div class="modal-sub" id="modal-sub">Final Score</div>
+    <div class="modal-score-display">
+      <span class="modal-score-p1" id="modal-p1-score">0</span>
+      <span class="modal-score-sep">–</span>
+      <span class="modal-score-p2" id="modal-p2-score">0</span>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-blue" id="btn-modal-again">▶ Play Again</button>
+      <button class="btn" id="btn-modal-history">View History</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════ TOAST CONTAINER ════════════════ -->
+<div class="toast-container" id="toast-container"></div>
+
+<script src="/script.js"></script>
+</body>
+</html>

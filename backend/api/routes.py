@@ -43,7 +43,7 @@ qlearner = QLearner()
 fairness_ctrl = FairnessController()
 
 _IS_VERCEL = bool(os.getenv("VERCEL"))
-_AI_TIMEOUT_SECONDS = 3.0 if _IS_VERCEL else 10.0
+_AI_TIMEOUT_SECONDS = 1.2 if _IS_VERCEL else 6.0
 _DEPTH_MAP = {
     1: DIFFICULTY_EASY,
     2: DIFFICULTY_MEDIUM,
@@ -134,19 +134,30 @@ def _winner_for_state(state: GameState) -> int:
     return 1 if p1 > p2 else (2 if p2 > p1 else 0)
 
 
-def _effective_depth(state: GameState, requested_depth: int, difficulty: str) -> int:
+def _effective_depth(state: GameState, requested_depth: int, difficulty: str, strategy: str = "alphabeta") -> int:
     depth = max(1, min(int(requested_depth or get_depth_for_difficulty(difficulty)), 6))
     if not _IS_VERCEL:
+        if strategy == "minimax":
+            return min(depth, 3)
         return depth
 
     remaining_moves = len(state.get_valid_moves())
-    if remaining_moves >= 22:
-        return 1
-    if remaining_moves >= 12:
-        return min(depth, 2)
-    if remaining_moves >= 6:
+    if strategy == "minimax":
+        if remaining_moves >= 18:
+            return 1
+        if remaining_moves >= 10:
+            return min(depth, 1)
+        if remaining_moves >= 5:
+            return min(depth, 2)
         return min(depth, 3)
-    return min(depth, 4)
+
+    if remaining_moves >= 18:
+        return 1
+    if remaining_moves >= 10:
+        return min(depth, 1)
+    if remaining_moves >= 5:
+        return min(depth, 2)
+    return min(depth, 3)
 
 
 def _effective_aivai_depth(state: GameState, requested_depth: int) -> int:
@@ -154,13 +165,13 @@ def _effective_aivai_depth(state: GameState, requested_depth: int) -> int:
     remaining_moves = len(state.get_valid_moves())
 
     if _IS_VERCEL:
-        if remaining_moves >= 22:
+        if remaining_moves >= 18:
             return 1
-        if remaining_moves >= 12:
+        if remaining_moves >= 8:
+            return min(depth, 1)
+        if remaining_moves >= 4:
             return min(depth, 2)
-        if remaining_moves >= 6:
-            return min(depth, 3)
-        return min(depth, 4)
+        return min(depth, 3)
 
     if remaining_moves >= 28:
         return min(depth, 2)
@@ -169,7 +180,7 @@ def _effective_aivai_depth(state: GameState, requested_depth: int) -> int:
 
 def _effective_aivai_delay(delay: float) -> float:
     if _IS_VERCEL:
-        return max(0.01, min(delay, 0.05))
+        return max(0.0, min(delay, 0.01))
     return max(0.01, min(delay, 0.5))
 
 
@@ -304,6 +315,11 @@ async def reset_game(session_id: Optional[str] = Query(default=None)):
 @router.post("/move")
 async def human_move(move: MoveReq, session_id: Optional[str] = Query(default=None)):
     session = await _get_session(session_id)
+    ai_strategy = None
+    ai_difficulty = None
+    ai_depth = None
+    ai_state_clone = None
+    ai_version_before = None
     async with session.lock:
         state = session.game_state
         meta = session.session_meta
@@ -327,10 +343,24 @@ async def human_move(move: MoveReq, session_id: Optional[str] = Query(default=No
                 }
             )
             _bump_state_version(session)
-            await push_state(session)
             if state.is_game_over:
+                await push_state(session)
                 await _end_game(session)
-            return {"status": "success", "state": _state_payload(session)}
+                return {"status": "success", "state": _state_payload(session)}
+
+            if meta.get("mode") == "hvai" and state.current_player == 2:
+                ai_strategy = meta.get("strategy", "alphabeta")
+                ai_difficulty = meta.get("difficulty", DIFFICULTY_MEDIUM)
+                ai_depth = _effective_depth(
+                    state,
+                    get_depth_for_difficulty(ai_difficulty),
+                    ai_difficulty,
+                    ai_strategy,
+                )
+                ai_state_clone = state.clone()
+                ai_version_before = meta.get("state_version", 0)
+            else:
+                await push_state(session)
         except (InvalidMoveError, GameStateError) as e:
             return JSONResponse(status_code=400, content={"status": "error", "message": str(e)})
         except Exception as e:
@@ -338,6 +368,100 @@ async def human_move(move: MoveReq, session_id: Optional[str] = Query(default=No
                 status_code=500,
                 content={"status": "error", "message": f"Unexpected error: {e}"},
             )
+
+    ai_move_result = None
+    ai_metrics = None
+    if ai_state_clone is not None:
+        ai = create_strategy(ai_strategy, ai_difficulty, qlearner=qlearner)
+        try:
+            ai_move_result, _, ai_metrics = await asyncio.wait_for(
+                asyncio.to_thread(ai.compute_move, ai_state_clone, ai_depth),
+                timeout=_AI_TIMEOUT_SECONDS,
+            )
+        except asyncio.TimeoutError:
+            fallback = ai_state_clone.get_valid_moves()
+            ai_move_result = fallback[0] if fallback else None
+            ai_metrics = {"time": _AI_TIMEOUT_SECONDS, "nodes": 0, "pruned": 0, "fallback": "timeout"}
+        except Exception:
+            ai_move_result = None
+            ai_metrics = None
+
+    if ai_state_clone is None:
+        return {"status": "success", "state": _state_payload(session)}
+
+    if ai_move_result is None:
+        async with session.lock:
+            await push_state(session)
+            return {"status": "success", "state": _state_payload(session)}
+
+    async with session.lock:
+        state = session.game_state
+        meta = session.session_meta
+        if meta.get("state_version", 0) != ai_version_before or state.is_game_over or state.current_player != 2:
+            return {"status": "success", "state": _state_payload(session)}
+
+        ai_player = state.current_player
+        ai_score_before = state.scores[ai_player]
+        try:
+            state.apply_move(ai_move_result)
+        except (InvalidMoveError, GameStateError):
+            return {"status": "success", "state": _state_payload(session)}
+
+        ai_move_key = f"{ai_move_result['type']}_{ai_move_result['r']}_{ai_move_result['c']}"
+        ai_boxes_gained = state.scores[ai_player] - ai_score_before
+        ai_opp = 1 if ai_player == 2 else 2
+        if state.is_game_over:
+            ai_reward = (
+                10.0
+                if state.scores[ai_player] > state.scores[ai_opp]
+                else (-10.0 if state.scores[ai_player] < state.scores[ai_opp] else 0.0)
+            )
+        else:
+            ai_reward = float(ai_boxes_gained)
+
+        ai_state_key_before = qlearner.get_state_key(ai_state_clone)
+        ai_state_key_after = qlearner.get_state_key(state)
+        qlearner.update_q_value(
+            ai_state_key_before,
+            ai_move_key,
+            ai_reward,
+            ai_state_key_after,
+            state.get_valid_moves(),
+            player=ai_player,
+        )
+        ai_q_val = qlearner.get_q_value(ai_state_key_before, ai_move_key, player=ai_player)
+        ai_metrics = ai_metrics or {"time": 0.0, "nodes": 0, "pruned": 0}
+        ai_metrics["q_value"] = ai_q_val
+        ai_metrics["strategy"] = ai_strategy
+        ai_metrics["difficulty"] = ai_difficulty
+
+        meta["move_num"] += 1
+        meta["moves"].append(
+            {
+                "move_num": meta["move_num"],
+                "player": ai_player,
+                "move_type": ai_move_result["type"],
+                "move_r": ai_move_result["r"],
+                "move_c": ai_move_result["c"],
+                "nodes": ai_metrics.get("nodes", 0),
+                "pruned": ai_metrics.get("pruned", 0),
+                "exec_time": ai_metrics.get("time", 0.0),
+                "q_value": ai_q_val,
+                "strategy": ai_strategy,
+            }
+        )
+
+        _bump_state_version(session)
+        await push_metrics(session, ai_metrics)
+        await push_state(session)
+        if state.is_game_over:
+            await _end_game(session)
+        return {
+            "status": "success",
+            "state": _state_payload(session),
+            "ai_move": ai_move_result,
+            "ai_metrics": ai_metrics,
+        }
 
 
 @router.post("/ai-move")
@@ -352,31 +476,41 @@ async def ai_move(req: AIMoveReq, session_id: Optional[str] = Query(default=None
             return JSONResponse(status_code=400, content={"status": "error", "message": "No valid moves."})
 
         difficulty = req.difficulty or _DEPTH_MAP.get(req.depth, DIFFICULTY_HARD)
-        depth = _effective_depth(state, req.depth, difficulty)
+        depth = _effective_depth(state, req.depth, difficulty, req.strategy)
         ai = create_strategy(req.strategy, difficulty, qlearner=qlearner)
 
         state_key_before = qlearner.get_state_key(state)
         player_before = state.current_player
         score_before = state.scores[player_before]
         state_clone = state.clone()
+        version_before = session.session_meta.get("state_version", 0)
 
-        try:
-            best_move, _, metrics = await asyncio.wait_for(
-                asyncio.to_thread(ai.compute_move, state_clone, depth),
-                timeout=_AI_TIMEOUT_SECONDS,
+    try:
+        best_move, _, metrics = await asyncio.wait_for(
+            asyncio.to_thread(ai.compute_move, state_clone, depth),
+            timeout=_AI_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        fallback = state_clone.get_valid_moves()
+        if not fallback:
+            return JSONResponse(
+                status_code=400,
+                content={"status": "error", "message": "AI timed out, no moves."},
             )
-        except asyncio.TimeoutError:
-            fallback = state.get_valid_moves()
-            if not fallback:
-                return JSONResponse(
-                    status_code=400,
-                    content={"status": "error", "message": "AI timed out, no moves."},
-                )
-            best_move = fallback[0]
-            metrics = {"time": _AI_TIMEOUT_SECONDS, "nodes": 0, "pruned": 0}
-        except Exception as e:
-            return JSONResponse(status_code=500, content={"status": "error", "message": f"AI error: {e}"})
+        best_move = fallback[0]
+        metrics = {"time": _AI_TIMEOUT_SECONDS, "nodes": 0, "pruned": 0, "fallback": "timeout"}
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"status": "error", "message": f"AI error: {e}"})
 
+    async with session.lock:
+        state = session.game_state
+        meta = session.session_meta
+        if meta.get("state_version", 0) != version_before or state.is_game_over:
+            return {
+                "status": "stale",
+                "state": _state_payload(session),
+                "metrics": None,
+            }
         if best_move is None:
             return JSONResponse(status_code=400, content={"status": "error", "message": "No moves available."})
 

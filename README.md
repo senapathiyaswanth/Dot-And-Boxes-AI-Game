@@ -40,9 +40,9 @@ The project supports:
 ### Frontend
 
 Core files:
-- `frontend/index.html`
-- `frontend/script.js`
-- `frontend/styles.css`
+- `public/index.html`
+- `public/script.js`
+- `public/styles.css`
 
 Frontend responsibilities:
 - render the single-page interface
@@ -104,6 +104,11 @@ Open:
 
 The project is deployed successfully on Vercel, but the runtime is tuned differently from localhost.
 
+Deployment in this repository is configured with:
+- `vercel.json` routing `/api/*` to the FastAPI app and SPA routes to `public/index.html`
+- `public/` as the static frontend directory served by Vercel
+- `.vercelignore` to keep local-only files out of deployments
+
 Hosted adjustments include:
 - no dependency on WebSocket live updates
 - state-response fast path to avoid extra round trips
@@ -112,6 +117,29 @@ Hosted adjustments include:
 - async persistence after game completion to avoid blocking the modal path
 
 These changes are there to make the hosted version feel responsive within a serverless environment.
+
+#### Fresh Vercel setup
+
+1. Install the Vercel CLI:
+
+```powershell
+cmd /c npm install -g vercel
+```
+
+2. Log in and link the repo:
+
+```powershell
+vercel login
+vercel
+```
+
+3. Deploy production:
+
+```powershell
+vercel --prod
+```
+
+When you run the app locally, FastAPI now serves `public/` first so local behavior matches the deployed Vercel frontend.
 
 ### Important Limitation
 
@@ -122,6 +150,8 @@ This means the project is good for:
 - demos
 - one running app instance
 - single-instance hosting
+
+On Vercel specifically, SQLite history and Q-learning data are written into the function temp directory, so they should be treated as non-durable across cold starts or different instances.
 
 It is not yet the final architecture for:
 - multiple app instances behind load balancing
