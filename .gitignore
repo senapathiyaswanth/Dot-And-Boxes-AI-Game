@@ -28,3 +28,5 @@ ehthumbs_vista.db
 .idea/
 *.swp
 *.swo
+
+.vercel
