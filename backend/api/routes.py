@@ -43,7 +43,7 @@ qlearner = QLearner()
 fairness_ctrl = FairnessController()
 
 _IS_VERCEL = bool(os.getenv("VERCEL"))
-_AI_TIMEOUT_SECONDS = 6.0 if _IS_VERCEL else 10.0
+_AI_TIMEOUT_SECONDS = 3.0 if _IS_VERCEL else 10.0
 _DEPTH_MAP = {
     1: DIFFICULTY_EASY,
     2: DIFFICULTY_MEDIUM,
@@ -140,9 +140,11 @@ def _effective_depth(state: GameState, requested_depth: int, difficulty: str) ->
         return depth
 
     remaining_moves = len(state.get_valid_moves())
-    if remaining_moves >= 28:
+    if remaining_moves >= 22:
+        return 1
+    if remaining_moves >= 12:
         return min(depth, 2)
-    if remaining_moves >= 16:
+    if remaining_moves >= 6:
         return min(depth, 3)
     return min(depth, 4)
 
@@ -152,11 +154,11 @@ def _effective_aivai_depth(state: GameState, requested_depth: int) -> int:
     remaining_moves = len(state.get_valid_moves())
 
     if _IS_VERCEL:
-        if remaining_moves >= 28:
+        if remaining_moves >= 22:
             return 1
-        if remaining_moves >= 16:
+        if remaining_moves >= 12:
             return min(depth, 2)
-        if remaining_moves >= 8:
+        if remaining_moves >= 6:
             return min(depth, 3)
         return min(depth, 4)
 

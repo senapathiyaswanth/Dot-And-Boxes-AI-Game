@@ -14,6 +14,7 @@ const IS_VERCEL_HOST = location.hostname.endsWith('.vercel.app');
 const PLAY_POLL_MS = IS_VERCEL_HOST ? 15000 : 6000;
 const AIVAI_POLL_MS = IS_VERCEL_HOST ? 180 : 120;
 const AIVAI_HIDDEN_POLL_MS = IS_VERCEL_HOST ? 1200 : 700;
+const AI_OVERLAY_DELAY_MS = 140;
 
 function getBrowserSessionId() {
   let sessionId = localStorage.getItem(BROWSER_SESSION_KEY);
@@ -216,9 +217,6 @@ const Nav = {
     document.querySelectorAll('.nav-item[data-section]').forEach(item => {
       item.addEventListener('click', () => this.go(item.dataset.section));
     });
-    document.querySelectorAll('.mobile-tab[data-section]').forEach(item => {
-      item.addEventListener('click', () => this.go(item.dataset.section));
-    });
     $('mobile-menu-btn')?.addEventListener('click', () => this.toggleSidebar());
     $('sidebar-backdrop')?.addEventListener('click', () => this.closeSidebar());
     window.addEventListener('resize', () => {
@@ -230,15 +228,12 @@ const Nav = {
     // Hide all pages
     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
     document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
-    document.querySelectorAll('.mobile-tab').forEach(n => n.classList.remove('active'));
 
     // Show target
     const page = $(`section-${section}`);
     const nav  = $(`nav-${section}`);
-    const mobileTab = document.querySelector(`.mobile-tab[data-section="${section}"]`);
     if (page) page.classList.add('active');
     if (nav)  nav.classList.add('active');
-    if (mobileTab) mobileTab.classList.add('active');
     this.current = section;
     if (location.hash !== `#${section}`) {
       history.replaceState(null, '', `#${section}`);
@@ -503,6 +498,7 @@ class GameBoard {
     this.readOnly    = opts.readOnly    || false;
     this.state       = null;
     this.suggestedMove = null;
+    this.pendingMove = null;
   }
 
   render(state) {
@@ -541,7 +537,10 @@ class GameBoard {
           line.classList.add(who === 1 ? 'drawn-p1' : 'drawn-p2');
         } else if (!state.is_game_over && !this.readOnly) {
           line.classList.add('available');
-          line.addEventListener('click',       () => this._handleClick('h', r, c));
+          line.addEventListener('pointerup',   e => {
+            e.preventDefault();
+            this._handleClick('h', r, c);
+          });
           line.addEventListener('mouseenter',  () => line.classList.add('hover'));
           line.addEventListener('mouseleave',  () => line.classList.remove('hover'));
         }
@@ -553,6 +552,14 @@ class GameBoard {
             this.suggestedMove.c === c) {
           line.classList.remove('available');
           line.classList.add('suggested');
+        }
+
+        if (this.pendingMove &&
+            this.pendingMove.type === 'h' &&
+            this.pendingMove.r === r &&
+            this.pendingMove.c === c) {
+          line.classList.remove('available');
+          line.classList.add('pending');
         }
 
         container.appendChild(line);
@@ -573,7 +580,10 @@ class GameBoard {
           line.classList.add(who === 1 ? 'drawn-p1' : 'drawn-p2');
         } else if (!state.is_game_over && !this.readOnly) {
           line.classList.add('available');
-          line.addEventListener('click',       () => this._handleClick('v', r, c));
+          line.addEventListener('pointerup',   e => {
+            e.preventDefault();
+            this._handleClick('v', r, c);
+          });
           line.addEventListener('mouseenter',  () => line.classList.add('hover'));
           line.addEventListener('mouseleave',  () => line.classList.remove('hover'));
         }
@@ -584,6 +594,14 @@ class GameBoard {
             this.suggestedMove.c === c) {
           line.classList.remove('available');
           line.classList.add('suggested');
+        }
+
+        if (this.pendingMove &&
+            this.pendingMove.type === 'v' &&
+            this.pendingMove.r === r &&
+            this.pendingMove.c === c) {
+          line.classList.remove('available');
+          line.classList.add('pending');
         }
 
         container.appendChild(line);
@@ -638,6 +656,16 @@ class GameBoard {
     this.suggestedMove = null;
     if (this.state) this.render(this.state);
   }
+
+  setPendingMove(move) {
+    this.pendingMove = move;
+    if (this.state) this.render(this.state);
+  }
+
+  clearPendingMove() {
+    this.pendingMove = null;
+    if (this.state) this.render(this.state);
+  }
 }
 
 /* ── Play Section Factory ─────────────────────────────────────
@@ -664,6 +692,7 @@ class PlaySection {
     this._wsHandler  = null;
     this._wsMetrics  = null;
     this._wsGameOver = null;
+    this.overlayTimer = null;
     this.build();
   }
 
@@ -871,6 +900,7 @@ class PlaySection {
     this.aiRequestInFlight = false;  // reset to prevent stuck-AI state on new game
     this.gameOverShown = false;
     this.lastStateVersion = null;
+    this._clearOverlayTimer();
 
     if (this.board) { this.board.onLineClick = null; }
 
@@ -910,6 +940,7 @@ class PlaySection {
     this.aiRequestInFlight = false;
     this.gameOverShown = false;
     this.lastStateVersion = null;
+    this._clearOverlayTimer();
     try {
       const res = await API.post('/reset', {}, { sessionId: this.sessionId });
       const prefix = this.strategy === 'minimax' ? 'mm' : 'ab';
@@ -1012,6 +1043,10 @@ class PlaySection {
 
   async _onHumanMove(type, r, c) {
     if (this.aiLocked) return;
+    this.aiLocked = true;
+    if (this.board) {
+      this.board.setPendingMove({ type, r, c });
+    }
     try {
       const res = await API.post('/move', { m_type: type, r, c }, { sessionId: this.sessionId });
       if (res.state) {
@@ -1021,7 +1056,10 @@ class PlaySection {
       this._addLog(1, `P1 drew ${type.toUpperCase()} line at (${r},${c})`);
       if (this.board) this.board.clearSuggestion();
     } catch (e) {
+      this.aiLocked = false;
       Toast.show('Invalid move: ' + e.message, 'error');
+    } finally {
+      if (this.board) this.board.clearPendingMove();
     }
   }
 
@@ -1032,7 +1070,12 @@ class PlaySection {
 
     const prefix = this.strategy === 'minimax' ? 'mm' : 'ab';
     const overlay = $(`${prefix}-overlay`);
-    if (overlay) overlay.classList.add('active');
+    this._clearOverlayTimer();
+    if (overlay) {
+      this.overlayTimer = setTimeout(() => {
+        if (this.aiRequestInFlight) overlay.classList.add('active');
+      }, AI_OVERLAY_DELAY_MS);
+    }
 
     try {
       // Map depth pill → difficulty: 1=easy, 2=medium, 3/4=hard, 5+=expert
@@ -1056,6 +1099,7 @@ class PlaySection {
     } catch (e) {
       Toast.show('AI move failed: ' + e.message, 'error');
     } finally {
+      this._clearOverlayTimer();
       if (overlay) overlay.classList.remove('active');
       this.aiRequestInFlight = false;
 
@@ -1107,10 +1151,17 @@ class PlaySection {
   _showGameOver(data) {
     this.aiLocked = false;
     this.aiRequestInFlight = false;
+    this._clearOverlayTimer();
     const scores = data.scores || {};
     const winner = data.winner ?? 0;
     Modal.show(scores, winner, () => this._startGame(), this.mode);
     if (winner !== 0) launchConfetti();
+  }
+
+  _clearOverlayTimer() {
+    if (!this.overlayTimer) return;
+    clearTimeout(this.overlayTimer);
+    this.overlayTimer = null;
   }
 
   _winnerFromScores(scores) {
